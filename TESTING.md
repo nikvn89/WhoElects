@@ -33,12 +33,33 @@ real model will correctly recognize a mismatch**.
 
 ## V2 live status
 
-**NOT RUN / NOT DEPLOYED by this revision workflow.**
-Do not reuse the v1 address, transaction hashes or screenshots as v2 results.
-The preserved evidence/v1-runtime.md contains only the user's historical v1 report,
-including its recorded G4 failure; that report was not reverified in this revision.
+**Critical live cases PASS**, based on user-executed Studio transactions on
+2026-10-17 and independent explorer receipt/source verification.
 
-## Essential Studio verification after NEW INSTANCE deployment
+Deployment: [0x5087c4bd62554051A832d849656880213f60a098](https://explorer-studio.genlayer.com/address/0x5087c4bd62554051A832d849656880213f60a098).
+[Exact inputs, transaction links, source comparison and readbacks](evidence/v2-runtime.md).
+All 11 transactions were FINALIZED when checked: 5 SUCCESS including deployment,
+6 expected ROLLBACK. State readbacks are from the user's Accepted-state screenshots.
+
+| Critical case | Observed |
+|---|---|
+| Author holds red/blue choice | PERFORMER_CHOOSES / AUTHOR |
+| Author elects green | Membership rollback; remains OPEN |
+| Outsider elects red | Authorization rollback; remains OPEN |
+| Author elects blue | ELECTED / blue / elected_by author |
+| Receiver holds red/blue choice | RECEIVER_CHOOSES / RECEIVER |
+| Author elects on receiver option | Authorization rollback |
+| Receiver elects green | Membership rollback; remains OPEN |
+| Receiver elects red | ELECTED / red / elected_by receiver |
+| Text red/blue, declared train/plane | INCONCLUSIVE rollback; no record |
+| Red/blue text does not name chooser | INCONCLUSIVE rollback; no record |
+
+The preserved evidence/v1-runtime.md is historical v1 data, including the G4 failure.
+Live provider faults, malformed-output injection, objection/withdrawal and other
+edge cases are NOT RUN in this v2 live session; related deterministic checks are
+covered locally. No local suite was rerun solely for these documentation edits.
+
+## Reproduction instructions for the tested critical cases
 
 Use two different wallets A (author) and B (receiver). No constructor arguments.
 Check `get_limits` → 2.0.0, immutable courses, INCONCLUSIVE rollback policy.
@@ -60,7 +81,7 @@ Save returned option ID as O1. `get_option(O1)` should show OPEN,
 PERFORMER_CHOOSES, AUTHOR, course_a red, course_b blue.
 With A, call `elect(O1, "green")`: expected rollback
 `Choose one of the two stored courses`. Read O1 again: it must be unchanged.
-With B, call `elect(O1, "red")`: expected authorization rollback, unchanged.
+With a third-party wallet C, call `elect(O1, "red")`: expected authorization rollback, unchanged.
 With A, call `elect(O1, "blue")`: expected ELECTED, chosen_course blue,
 elected_by A; original course pair unchanged.
 
@@ -88,10 +109,10 @@ of those faults is NOT RUN; do not add an administrative backdoor to simulate it
 Other deterministic guards are covered locally; no need to repeat every unit case
 manually unless Studio behavior differs.
 
-## Record actual results here after testing
+## Submission evidence
 
-For deployment: new contract address, deploy transaction, exact repository commit,
-SHA-256 of repository and explorer source. For each case: wallet, exact arguments,
-option ID, expected result, transaction link, execution success/rollback text,
-consensus/finality and get_option before/after. Mark incomplete cases NOT RUN and
-unexpected semantic outcomes FAIL. A finalized revert is not a successful election.
+Actual v2 results are in [evidence/v2-runtime.md](evidence/v2-runtime.md).
+Retain the deployed contract and source hash. After uploading the documentation
+update, pin the new submitted GitHub commit. The source-observed commit recorded
+in the runtime report predates only this documentation update. If a compare URL
+is requested, establish the final-reviewed BASE separately; do not invent it.

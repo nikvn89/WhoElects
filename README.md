@@ -93,12 +93,19 @@ The tests check the positional encoding and multibyte inputs.
 See [TESTING.md](TESTING.md). The supplied suite has **50 passing local tests**
 using GenLayer SDK v0.2.16 Direct Mode and mocked model outputs, plus AST lint and SDK validation/schema extraction.
 These establish deterministic guards/storage behavior, not real AI accuracy or
-network consensus. There are no v2 deployment or live test claims yet.
+network consensus.
+
+The v2 instance [0x5087c4bd62554051A832d849656880213f60a098](https://explorer-studio.genlayer.com/address/0x5087c4bd62554051A832d849656880213f60a098)
+was deployed and tested on 2026-10-17. [V2 runtime evidence](evidence/v2-runtime.md)
+records all 11 FINALIZED transactions (deployment plus 10 calls): both chooser
+branches, rejection of third courses, permission checks, valid elections, pair
+mismatch and unclear chooser. Source on explorer and GitHub matches the SHA below.
+Execution receipts were independently decoded; state readbacks come from the user's
+Studio screenshots. See that report for scope and remaining unrun live cases.
 
 [Original v1 evidence](evidence/v1-runtime.md) is historical and retains its
-recorded semantic failure. It does not validate v2. Add new deployment and actual
-critical-case results to TESTING.md before resubmission; ensure the source on the
-explorer is byte-for-byte the repository contract (compare SHA-256 below).
+recorded semantic failure. It does not validate v2. V2 results are recorded separately
+in TESTING.md and evidence/v2-runtime.md; compare source SHA-256 below.
 Pin repository source to the submitted commit SHA. If a compare link is requested,
 use the actual final-reviewed BASE and submitted HEAD SHAs, not `main`.
 
