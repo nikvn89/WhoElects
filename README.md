@@ -1,119 +1,123 @@
-WhoElects does not ask who must act first, and it does not check an action against a policy. Both wallets are proper parties to the record and each has a method of its own. It asks one thing: when a sentence puts two courses on the table, whose say-so settles which course is followed — and it hands that single power to exactly one of the two addresses, for good.
+# WhoElects v2.0.0
 
-# WhoElects
+WhoElects records who may choose between **two explicit, immutable courses**.
+GenLayer validators read the supplied text and that exact pair once per opening
+attempt. They determine whether the author (performer) or the named receiver
+holds the choice. Only that wallet can elect one of the stored courses, once.
 
-GenLayer Intelligent Contract · StudioNet (chain 61999) · py-genlayer v0.2 (`# v0.2.16`)
+## Correction from v1
 
-**The contract holds no money and moves nothing.** The test sentences mention payment and delivery; the contract only
-records which wallet holds the choice and what that wallet chose. It is not an escrow or a payment router.
+The reviewed v1 checked the caller but accepted any nonempty course string.
+V2 stores `course_a` and `course_b` when the option is opened, exposes both in
+`get_option`, and rejects any election outside that pair before writing state.
+There is no method to edit either course. The classifier sees exactly the same
+validated courses that are stored. The ID binds the author, receiver wallet,
+receiver label, option text and ordered pair.
 
-| | |
-|---|---|
-| Contract | `contracts/WhoElects.py` |
-| Address (StudioNet) | `0xcdc35FbD8EC6453d5d8be228D5976625a40226b0` ([explorer](https://explorer-studio.genlayer.com/address/0xcdc35FbD8EC6453d5d8be228D5976625a40226b0)) |
-| Deploy tx | `0x15cfd86623ca80234c0d8be91a08d88e6fcd0006a3e0b2d97f08bff5fa71cc0c` |
-| Source SHA-256 | `0ae947019525a9d499bd2b85225053c8eb8e68730f3d9c6ff256a4617c81267a` |
-| Tested on-chain | `RUNTIME_EVIDENCE.md` — 16 transactions, one hash each; 4 of 5 labels as expected (G4 misread, recorded) |
-| Testing summary | `TESTING.md` |
+The classifier also checks whether the text actually offers that pair. Unclear
+pair binding, unclear chooser, malformed output or catchable provider failure
+must not assign a holder: `INCONCLUSIVE` rolls back the opening, leaving no record.
+This replaces v1's automatic receiver assignment on uncertainty. Independent
+validators rerun the evaluation and require the same canonical result.
 
-## What it does
+## State and permissions
 
-The author is the side that must do the thing; the receiver stands to receive it. The author records a sentence that
-puts two courses on the table. Validators read it **once**:
-
-- `PERFORMER_CHOOSES` — the pick belongs to the author → `holder = AUTHOR`;
-- `RECEIVER_CHOOSES` — the pick belongs to the receiver → `holder = RECEIVER`.
-
-From then on the permission rule is a single address comparison:
-
-| | `holder = AUTHOR` | `holder = RECEIVER` |
+| Operation | Caller | Result |
 |---|---|---|
-| `elect` by the author | succeeds | **reverts** *The choice here is not yours to make* |
-| `elect` by the receiver | **reverts** *The choice here is not yours to make* | succeeds |
-| `object_to_election` | the receiver | the author |
-| `withdraw_option` | the author, only before anyone elects | the author, only before anyone elects |
-| After `elect` | ELECTED, once, permanent | ELECTED, once, permanent |
+| `open_option` | Author, different from receiver | Definite outcome creates OPEN with frozen courses and holder; returns option ID |
+| `elect` | Frozen holder only | OPEN → ELECTED, one stored course, irreversible |
+| `object_to_election` | Other party only | One note after ELECTED; does not reverse the election |
+| `withdraw_option` | Author only | OPEN → WITHDRAWN; cannot withdraw after election |
 
-Two functions, `_elector` and `_objector`, hold the whole rule; `elect` and `object_to_election` only compare the
-caller with their result. `get_option` prints both wallets in full from the first transaction. `elected_by` stores the
-wallet that actually pressed `elect`, so a reader can check it matches `elector_wallet`. An objection sits beside the
-election and changes nothing; the contract does not adjudicate.
+No money, external web, clock, owner override or administrative method is used.
 
-## Proven on StudioNet
+## Deploy and call
 
-| What | Transactions | Result |
-|---|---|---|
-| Sentences that differ only in the subject | G5 `0x6c3479f7…5ea8` · R5 `0xacc7e3e4…b7e0` | `PERFORMER_CHOOSES` / `RECEIVER_CHOOSES` |
-| A sentence with "you" that still gives the author the pick | G1 `0x2dc702d8…4a5f` · R3 `0xa3ee5ef7…0be9` | `PERFORMER_CHOOSES` / `RECEIVER_CHOOSES` |
-| **The same revert sentence, two different wallets** | receiver on G5 `0x56ceb05f…0dad` · author on R5 `0xb45528a0…0e35` | both reverted *The choice here is not yours to make* |
-| The other two cells of the matrix | author on G5 `0xada31bc9…7a6b` · receiver on R5 `0xe221daa8…a989` | both SUCCESS; `elected_by` matches `elector_wallet` |
-| Once, and no undo | elect again `0x62617673…91ce` · withdraw after election `0xe4455cd4…c114` | reverted / reverted *…can no longer be withdrawn* |
-| The other side's voice | objection on G5 `0x235e0ae7…6e50` | SUCCESS; state stays ELECTED |
-| **A misread, recorded** | G4 *Either grade of material is open to us.* `0x13d7073e…5065` | `RECEIVER_CHOOSES` (expected `PERFORMER_CHOOSES`), 3–2 |
+Deploy **a new instance** of `contracts/WhoElects.py` in GenLayer Studio, Normal
+(Full Consensus). Constructor: no arguments. Do not upgrade a v1 instance:
+storage, opening arguments, IDs and semantic handling changed. `get_limits`
+must report `version = 2.0.0` and `courses_immutable = true`.
 
-## Methods
+```python
+# Signed by author A; B is a DIFFERENT wallet controlled by the tester.
+option_id = open_option(
+    B, "Customer", "I choose either red or blue.", "red", "blue"
+)
+get_option(option_id)
+elect(option_id, "green")  # holder: must revert, remains OPEN
+elect(option_id, "blue")   # holder: succeeds, becomes ELECTED
+```
 
-| Write | Who | Notes |
-|---|---|---|
-| `open_option(receiver_wallet, receiver_label, text)` | the author | the only model call |
-| `elect(option_id_hex, chosen_course)` | `_elector` only | checks: state → caller → course (1–60 chars); once |
-| `object_to_election(option_id_hex, note)` | `_objector` only | after ELECTED; once; changes nothing else |
-| `withdraw_option(option_id_hex)` | the author | only while OPEN |
+Use the ID returned by the opening transaction, then read it with `get_option`
+in Accepted state. A submitted transaction hash is not proof of success; inspect
+execution result, consensus/finality and post-state. Studio/explorer may expose
+the returned ID in the execution return value. The independent ID recipe is also
+included in `tests/test_whoelects.py` (`option_id`) for reproducible calculation.
 
-Views (JSON strings; an unknown id returns `"{}"`, never a revert): `get_option` (every field plus `outcome`,
-`elector_wallet`, `objector_wallet`), `get_rubric`, `get_limits`. There is no preview or dry-run view.
+Public methods:
 
-Option id: `keccak256("WHO_ELECTS:OPTION:V1|" + author_lower + "|" + len(text) + "|" + text)`, where `text` has all
-whitespace collapsed (Python `" ".join(text.split())`).
+- `open_option(receiver_wallet, receiver_label, text, course_a, course_b) -> str`
+- `elect(option_id_hex, chosen_course) -> None`
+- `object_to_election(option_id_hex, note) -> None`
+- `withdraw_option(option_id_hex) -> None`
+- `get_option(option_id_hex) -> str` (JSON; unknown ID returns `{}`)
+- `get_limits() -> str` (JSON), `get_rubric() -> str`
 
-## Design choices
+Courses are normalized by splitting and joining whitespace with one space.
+They must be nonempty and differ after this normalization and lowercasing.
+Election membership is **case-sensitive exact equality** after whitespace
+normalization. Thus ` red ` selects stored `red`; `RED`, `red.` and `green` do
+not. Synonyms, visually similar Unicode characters and semantic equivalence are
+not accepted as substitutes by `elect`.
 
-- **Fail-safe is `RECEIVER_CHOOSES`, against the writer on purpose.** A wrong `PERFORMER_CHOOSES` hands the writer a
-  valuable choice its own unclear wording created; a wrong `RECEIVER_CHOOSES` costs the writer a right it lost through
-  its own wording, and the receiver loses nothing. Ambiguity must never be a reward for the person who wrote it.
-- **The branches are not balanced, and the answer is a mechanism.** The author clearly prefers `PERFORMER_CHOOSES`.
-  Three layers stand against wording games: (1) the fail-safe runs against the author; (2) to get the pick, the author
-  must write a sentence anyone reads as giving it to them — and that clarity is exactly what the receiver reads before
-  agreeing; (3) the text is part of the id, so the same sentence cannot be reopened for another reading.
-- **`withdraw_option` dies at ELECTED.** Otherwise, on a `RECEIVER_CHOOSES` option the author could withdraw whenever
-  the receiver picked something it disliked.
-- **`elect` checks state before the caller**, so a wallet without the choice calling into a settled option is told it
-  is settled.
-- **Prompt fence.** The model sees only the rubric, the receiver label and the text — no wallet. Both answer tokens are
-  reserved and rejected before the model call, so "the outcome is PERFORMER_CHOOSES" cannot be smuggled in.
+## Size limits
 
-## How to try it in GenLayer Studio
+All lengths are UTF-8 bytes after validation/normalization:
 
-Use **two wallets of your own**: author and receiver.
+| Field | Limit |
+|---|---:|
+| Text | 120 |
+| Receiver label | 24 |
+| Each course | 40 |
+| Total label + text + both courses | 160 |
+| Objection note | 60 |
 
-1. Author: `open_option(<receiver>, "the Buyer", "We decide which of the two routes is taken.")` and
-   `open_option(<receiver>, "the Buyer", "The Buyer decides which of the two routes is taken.")`. Read `get_option`
-   for `holder` and `elector_wallet`.
-2. Receiver: `elect(<first id>, "the short route")` reverts *The choice here is not yours to make*; on the second id it
-   succeeds. Author: the reverse.
+Send canonical, trimmed positional arguments. Maximum-budget opening calldata
+measured 238 bytes; `elect` 128; objection 162. These are encoded calldata sizes,
+not the size of a signed transaction. Adding excess whitespace to raw requests or
+using keyword arguments can enlarge payloads before the contract validates them.
+The tests check the positional encoding and multibyte inputs.
 
-Text and label may not contain `PERFORMER_CHOOSES` or `RECEIVER_CHOOSES` in any letter case. Courses and notes are 1–60
-characters; keep sentences under about 168 characters so the calldata stays under 255 bytes.
+## Tests and evidence
 
-## Honest limitation
+See [TESTING.md](TESTING.md). The supplied suite has **50 passing local tests**
+using GenLayer SDK v0.2.16 Direct Mode and mocked model outputs, plus AST lint and SDK validation/schema extraction.
+These establish deterministic guards/storage behavior, not real AI accuracy or
+network consensus. There are no v2 deployment or live test claims yet.
 
-1. **The contract holds no money, moves nothing and enforces nothing off chain.** It records which wallet holds the
-   choice and what was pressed.
-2. **`chosen_course` is the holder's own statement.** The contract does not check that it is one of the two courses in
-   the text — it cannot, because the courses exist only in natural language. The value is that *who may press* is
-   frozen before any choice exists, plus the other side's objection.
-3. **One branch clearly favours the writer.** The branches are not balanced; the protection is the three layers above.
-4. **A wrong `PERFORMER_CHOOSES` is the main risk** — a valuable choice moves to the writer. Nets: the fail-safe, one
-   objection per election, and `elector_wallet` printed in full from the first transaction. On StudioNet the observed
-   error went the other way: G4 was read `RECEIVER_CHOOSES`, and every `PERFORMER_CHOOSES` case passed by a narrow
-   margin while every `RECEIVER_CHOOSES` case was unanimous. An author should expect to need an unmistakable sentence.
-5. **The author declares the receiver's wallet.** `open_option` refuses the author's own wallet, but a second wallet is
-   cheap — and here that is especially serious: if both wallets belong to one person, `RECEIVER_CHOOSES` protects
-   nobody. The contract cannot prove that two wallets are two people. This is the largest limitation.
-6. **`MAX_COURSE_LENGTH = 60` is a hard calldata ceiling.** A course that needs more than 60 characters cannot be
-   recorded.
+[Original v1 evidence](evidence/v1-runtime.md) is historical and retains its
+recorded semantic failure. It does not validate v2. Add new deployment and actual
+critical-case results to TESTING.md before resubmission; ensure the source on the
+explorer is byte-for-byte the repository contract (compare SHA-256 below).
+Pin repository source to the submitted commit SHA. If a compare link is requested,
+use the actual final-reviewed BASE and submitted HEAD SHAs, not `main`.
 
-The contract accepts sentences up to 600 characters, but `open_option` at the caps measures 761 bytes of calldata;
-only sentences up to about 168 characters fit the 255-byte limit, and longer ones would be refused by the RPC.
+## Limits of the claim
 
-License: MIT.
+The code guarantees membership in the stored pair. Whether that pair matches the
+natural-language text and who holds the choice remain probabilistic semantic
+judgments. Prompt fencing and consensus do not prove immunity to prompt injection
+or model errors. Different-looking phrases can describe the same real course;
+only the model evaluates semantic distinctness. This is an onchain choice record,
+not proof of identity, consent, performance, legal validity or real-world effects.
+The author supplies the text, roles and alternatives without receiver approval.
+Repeated openings with altered inputs are possible; no Sybil protection is claimed.
+
+## Source integrity
+
+Contract SHA-256: `697e7beeabf65f1798800735e97e8d0a9cc9aee849989cf33c77f507f56c6a98`
+
+```bash
+sha256sum contracts/WhoElects.py
+# macOS: shasum -a 256 contracts/WhoElects.py
+```

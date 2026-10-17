@@ -1,71 +1,97 @@
-# TESTING
+# WhoElects v2 testing
 
+Local run: 2026-10-17. Source: SHA-256 in README.
+
+## Executed locally
+
+**50 passed**: 44 contract tests and 6 serialized-calldata cases. GenLayer Direct
+Mode uses the real v0.2.16 Python SDK/storage with mocked model outputs. It does
+not run distributed consensus, live providers, wallet signatures or finality.
+AST lint: passed, 3 checks. SDK validation and ABI schema extraction: passed
+(7 methods: 3 view, 4 write; empty constructor). Dependencies are pinned in requirements-test.txt.
+The old README's 46-test / 12-mutation counts are not reused as v2 evidence.
+
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-test.txt
+python -m pytest tests -q -p no:cacheprovider
+genvm-lint lint contracts/WhoElects.py
 ```
-COMPILE PASS ≠ RUNTIME PASS
-SUBMITTED ≠ ACCEPTED ≠ FINALIZED ≠ EXECUTION SUCCESS ≠ POSTCONDITION PASS
-```
 
-## On-chain (GenLayer StudioNet, 2026-10-04)
+The first Direct Mode run downloads the SDK. No private key or funded wallet is
+needed. The two test files are included, so results can be reproduced.
 
-Two wallets (author, receiver), every option opened with the label `the Buyer`, in GenLayer Studio (Normal / Full
-Consensus). Full table with inputs, hashes, results and read-back state: `RUNTIME_EVIDENCE.md`.
+Coverage includes both holder outcomes and both stored alternatives; third-course
+and changed-string rejection with byte-identical post-state; unauthorized caller;
+one-shot election; objection permissions and immutability; withdrawal terminality;
+empty/duplicate courses; reserved tokens; UTF-8 limits; all-input ID binding;
+unknown IDs; exact prompt/storage pair; canonical output parsing; provider error
+rollback; retry after inconclusive opening; validator disagreement; calldata size.
+Mocked mismatch/uncertainty tests validate handling of that result, **not whether a
+real model will correctly recognize a mismatch**.
 
-| Check | Cases | Result |
-|---|---|---|
-| **Check 1** — sentences that differ only in the final pronoun (`us` / `you`) | G4 → expected `PERFORMER_CHOOSES`, got **`RECEIVER_CHOOSES`** (3–2); R4 not opened | **FAIL** |
-| Check 1, second pair — sentences that differ only in the subject | G5 → `PERFORMER_CHOOSES`, R5 → `RECEIVER_CHOOSES` | PASS |
-| **Check 2** — "you" in a sentence that still gives the author the pick | G1 → `PERFORMER_CHOOSES`, R3 → `RECEIVER_CHOOSES` | PASS |
-| **Check 3** — the four-cell matrix (one method, two wallets, two options) | on G5: receiver reverts, author succeeds; on R5: author reverts, receiver succeeds | PASS |
-| once only | a second `elect` reverts *already elected* | PASS |
-| the other side's voice | `object_to_election` succeeds and changes nothing else | PASS |
-| no undo after a choice | `withdraw_option` after ELECTED reverts | PASS |
-| the WITHDRAWN exit | `withdraw_option` on an open option succeeds | PASS |
-| only the author withdraws | a receiver call reverted (sent by mistake, kept as evidence) | PASS |
+## V2 live status
 
-**Agreement margins.** G4 (misread) 3–2; G5 needed a leader rotation before it was accepted; G1 3–2. R5 and R3 were
-both 3/3. Every `PERFORMER_CHOOSES` case was close and every `RECEIVER_CHOOSES` case unanimous: the rubric's
-"where the text does not settle it, return RECEIVER_CHOOSES" pulls the model toward the receiver when a sentence
-signals the author only through a pronoun. The rubric was not changed after the run.
+**NOT RUN / NOT DEPLOYED by this revision workflow.**
+Do not reuse the v1 address, transaction hashes or screenshots as v2 results.
+The preserved evidence/v1-runtime.md contains only the user's historical v1 report,
+including its recorded G4 failure; that report was not reverified in this revision.
 
-Test cases (5 pairs, same surface, opposite labels):
+## Essential Studio verification after NEW INSTANCE deployment
 
-| Case | Text | Expected | On-chain |
-|---|---|---|---|
-| G4 | Either grade of material is open to us. | PERFORMER_CHOOSES | **RECEIVER_CHOOSES** |
-| R4 | Either grade of material is open to you. | RECEIVER_CHOOSES | not sent |
-| G5 | We decide which of the two routes is taken. | PERFORMER_CHOOSES | PERFORMER_CHOOSES |
-| R5 | The Buyer decides which of the two routes is taken. | RECEIVER_CHOOSES | RECEIVER_CHOOSES |
-| G1 | We may deliver to you in one shipment or in several. | PERFORMER_CHOOSES | PERFORMER_CHOOSES |
-| R3 | You may require the work on site or remotely. | RECEIVER_CHOOSES | RECEIVER_CHOOSES |
-| G2 | Payment may be made by transfer or by card, as we find convenient. | PERFORMER_CHOOSES | not sent |
-| R2 | Payment may be taken by transfer or by card, whichever the Buyer prefers. | RECEIVER_CHOOSES | not sent |
-| G3 | The work may be carried out on site or remotely, at our option. | PERFORMER_CHOOSES | not sent |
-| R1 | The Buyer may call for delivery in one shipment or in several. | RECEIVER_CHOOSES | not sent |
+Use two different wallets A (author) and B (receiver). No constructor arguments.
+Check `get_limits` → 2.0.0, immutable courses, INCONCLUSIVE rollback policy.
+Use Normal (Full Consensus); inspect accepted state and transaction execution.
 
-## Offline (before deploy)
+### 1. Author holds the choice and cannot select a third course
 
-- **genvm-linter** `lint`, `schema`, `typecheck`: pass; 7 methods (4 write, 3 view), no type errors.
-- **Direct Mode tests** (`genlayer-test`, the real py-genlayer v0.2.16 SDK, model mocked): 46 passed — `_elector` and
-  `_objector` for both holders and always different, the four-cell matrix, the runtime table replayed, state checked
-  before the caller, all 22 revert strings each with a dedicated test, id formula and whitespace normalization,
-  fail-safe, validator function, prompt fence, views. Twelve deliberate faults (the elector fixed to the author, the
-  objector fixed, the caller check skipped, the check order reversed, withdraw allowed after election, `elected_by`
-  forged, the holder fixed, the fail-safe flipped, an objection that reopens, a second objection allowed, an answer
-  token removed from the fence, withdraw open to anyone) were each caught by a test.
-- **Rubric gate**: no word or word pair separates the two test classes; the rubric shares no content word with any of
-  the 10 cases and avoids *decide, prefer, option, require, call for*.
-- **Calldata**: every call used on-chain is between 101 and 167 bytes, under the 255-byte RPC limit.
+With A, call `open_option` with these five fields in order:
 
-## Consensus behaviour
+| Field | Value |
+|---|---|
+| receiver_wallet | B's full address |
+| receiver_label | `Customer` |
+| text | `I choose either red or blue.` |
+| course_a | `red` |
+| course_b | `blue` |
 
-The model is called once, in `open_option`. Validators re-run the classification and must agree on the exact label;
-a disagreement rotates the leader or reverts the transaction (fail-closed). Re-running does not defend against prompt
-injection — the fence does.
+Save returned option ID as O1. `get_option(O1)` should show OPEN,
+PERFORMER_CHOOSES, AUTHOR, course_a red, course_b blue.
+With A, call `elect(O1, "green")`: expected rollback
+`Choose one of the two stored courses`. Read O1 again: it must be unchanged.
+With B, call `elect(O1, "red")`: expected authorization rollback, unchanged.
+With A, call `elect(O1, "blue")`: expected ELECTED, chosen_course blue,
+elected_by A; original course pair unchanged.
 
-## What this run does NOT prove
+### 2. Receiver holds the choice
 
-- One of the five labels sent was wrong (G4). Label stability is weak for sentences that name the author only through a
-  pronoun; repeated runs and other validator sets were not measured.
-- Five of the ten semantic cases were not sent.
-- Sentences longer than about 168 characters (the contract allows 600) were not sent.
-- Prompt-injection resistance rests on the fence and the reserved-token check; no adversarial model run was done.
+With A, open a second option with the same wallet/label/courses but text:
+`Customer chooses whether I deliver red or blue.`
+Save returned ID as O2. Expected RECEIVER_CHOOSES and RECEIVER.
+With A, `elect(O2, "red")` must revert for authorization.
+With B, `elect(O2, "green")` must revert for course membership.
+With B, `elect(O2, "red")` should succeed, elected_by B, courses unchanged.
+If a real outcome differs, record the failure; do not overwrite the expected label.
+
+### 3. Semantic binding and ambiguity
+
+With A, try `open_option(B, "Customer", "I choose either red or blue.",
+"train", "plane")`. Expected inconclusive rollback: no record and no holder.
+Then try `open_option(B, "Customer", "Red or blue is available.", "red", "blue")`.
+Expected inconclusive rollback because no chooser is stated. These two cases
+must use the real model; local mocks do not prove them. A success here is a
+semantic failure to investigate before claiming the fix complete.
+
+Provider failures and malformed model outputs were tested locally. Live injection
+of those faults is NOT RUN; do not add an administrative backdoor to simulate it.
+Other deterministic guards are covered locally; no need to repeat every unit case
+manually unless Studio behavior differs.
+
+## Record actual results here after testing
+
+For deployment: new contract address, deploy transaction, exact repository commit,
+SHA-256 of repository and explorer source. For each case: wallet, exact arguments,
+option ID, expected result, transaction link, execution success/rollback text,
+consensus/finality and get_option before/after. Mark incomplete cases NOT RUN and
+unexpected semantic outcomes FAIL. A finalized revert is not a successful election.
